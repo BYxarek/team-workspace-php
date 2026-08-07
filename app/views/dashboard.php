@@ -1,0 +1,3 @@
+<header class="page-head"><div><h1>Добро пожаловать, <?=e($user['login'])?></h1><p class="muted">Роль: <span class="badge"><?=e($user['role'])?></span></p></div></header>
+<section class="grid stats"><div class="card"><span class="muted">Доступные доски</span><strong><?= (int)($boardCount??0) ?></strong></div></section>
+<section class="card"><div class="section-title"><h2>Последние события</h2></div><div class="timeline"><?php foreach($events??[] as $ev):?><div class="event"><span class="dot"></span><div><b><?=e($ev['title'])?></b><small><?=e($ev['created_at'])?></small></div></div><?php endforeach;?><?php if(empty($events)):?><p class="muted">Событий пока нет.</p><?php endif;?></div></section>
