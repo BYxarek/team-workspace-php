@@ -26,4 +26,4 @@
 </dialog>
 <?php endif;?>
 
-<script>window.TODO_LISTS_PAGE=true;</script>
+<script nonce="<?=e(csp_nonce())?>">window.TODO_LISTS_PAGE=true;</script>

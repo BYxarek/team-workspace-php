@@ -1,14 +1,145 @@
 <header class="page-head">
-  <div><h1><?=e($list['title'])?></h1><p class="muted"><?=e($list['description'])?></p></div>
+  <div>
+
+    <h1><?=e($list['title'])?></h1>
+    <p class="muted"><?=e($list['description'])?></p>
+  </div>
   <div class="actions">
     <span class="ajax-sync" id="ajax-sync" aria-live="polite"><span class="ajax-sync-dot"></span><span id="ajax-sync-text">AJAX · 5с</span></span>
-    <?php if(in_array($user['role'],['developer','founder'],true)):?><button class="btn primary" type="button" data-open="new-task"><?=icon('plus')?> Задача</button><?php endif;?>
-    <?php if($user['role']==='founder'):?><button class="btn" type="button" data-open="board-settings"><?=icon('settings')?> Настройки</button><?php endif;?>
+    <?php if(in_array($user['role'],['developer','founder'],true)):?>
+      <button class="btn primary" type="button" data-open="new-task"><?=icon('plus')?> Задача</button>
+    <?php endif;?>
+    <?php if($user['role']==='founder'):?>
+      <button class="btn" type="button" data-open="board-settings"><?=icon('settings')?> Настройки</button>
+    <?php endif;?>
   </div>
 </header>
 <div id="board" class="kanban" data-list-id="<?=$list['id']?>"></div>
-<dialog id="new-task" class="modal"><form id="new-task-form" class="stack" novalidate><h2>Новая задача</h2><label for="task-title">Название<input id="task-title" name="title" required autocomplete="off"></label><label for="task-description">Описание<textarea id="task-description" name="description" autocomplete="off"></textarea></label><label for="task-category">Категория<select id="task-category" name="category_id" autocomplete="off"><?php foreach($categories as $c):?><option value="<?=$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?></select></label><label for="task-tags">Теги<select id="task-tags" name="tags[]" multiple autocomplete="off"><?php foreach($tags as $t):?><option value="<?=$t['id']?>"><?=e($t['name'])?></option><?php endforeach;?></select></label><div class="modal-actions"><button class="btn primary" type="submit">Создать</button><button type="button" class="btn ghost" data-close>Отмена</button></div></form></dialog>
+
+<dialog id="new-task" class="modal">
+  <form id="new-task-form" class="stack" novalidate>
+    <h2>Новая задача</h2>
+    <label for="task-title">Название
+      <input id="task-title" name="title" required autocomplete="off">
+    </label>
+    <label for="task-description">Описание
+      <textarea id="task-description" name="description" autocomplete="off"></textarea>
+    </label>
+    <label for="task-category">Категория
+      <select id="task-category" name="category_id" autocomplete="off">
+        <?php foreach($categories as $c):?><option value="<?=$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?>
+      </select>
+    </label>
+    <label for="task-tags">Теги
+      <select id="task-tags" name="tags[]" multiple autocomplete="off">
+        <?php foreach($tags as $t):?><option value="<?=$t['id']?>"><?=e($t['name'])?></option><?php endforeach;?>
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button class="btn primary" type="submit">Создать</button>
+      <button type="button" class="btn ghost" data-close>Отмена</button>
+    </div>
+  </form>
+</dialog>
+
 <?php if($user['role']==='founder'):?>
-<dialog id="board-settings" class="modal wide settings-modal"><form id="board-settings-form" class="stack" novalidate><div class="settings-head"><div><h2>Настройки To-do</h2></div><button type="button" class="icon-btn" data-close aria-label="Закрыть">×</button></div><section class="settings-section"><h3>Основные данные</h3><label for="board-title">Название<input id="board-title" name="title" value="<?=e($list['title'])?>" required autocomplete="off"></label><label for="board-description">Описание<textarea id="board-description" name="description" autocomplete="off"><?=e($list['description'])?></textarea></label></section><section class="settings-section"><h3>Видимость</h3><label for="board-visibility">Кто может просматривать список<select id="board-visibility" name="visibility" autocomplete="off"><option value="TEAM_ONLY" <?=$list['visibility']==='TEAM_ONLY'?'selected':''?>>Только команда (разработчики и основатель)</option><option value="SELECTED_USERS" <?=$list['visibility']==='SELECTED_USERS'?'selected':''?>>Команда + выбранные обычные пользователи</option><option value="PUBLIC_READ" <?=$list['visibility']==='PUBLIC_READ'?'selected':''?>>Публичный просмотр по ссылке</option></select></label><p class="field-help" id="visibility-help"></p><div id="public-link-box" class="public-link-box" <?=$list['visibility']==='PUBLIC_READ'&&!empty($list['public_slug'])?'':'hidden'?>><span class="muted">Публичная ссылка</span><code id="public-link"><?=!empty($list['public_slug'])?e(absolute_url('/public/todos/'.$list['public_slug'])):''?></code></div></section><section class="settings-section" id="viewer-settings"><div class="section-title"><h3>Доступ обычных пользователей</h3><span class="badge"><?=count($normalUsers)?> доступно</span></div><p class="muted">Отметьте пользователей, которым разрешён только просмотр этого To-do списка.</p><div class="viewer-list" id="viewer-list"><?php if(!$normalUsers):?><div class="empty-inline">Нет активных пользователей с ролью «Пользователь».</div><?php endif;?><?php foreach($normalUsers as $nu):?><label class="viewer-option" for="viewer-<?=$nu['id']?>"><input id="viewer-<?=$nu['id']?>" type="checkbox" name="viewer_ids[]" value="<?=$nu['id']?>" <?=in_array((int)$nu['id'],$viewerIds,true)?'checked':''?> autocomplete="off"><span class="avatar-mini"><?=e(mb_strtoupper(mb_substr($nu['login'],0,1)))?></span><span><?=e($nu['login'])?></span></label><?php endforeach;?></div></section><section class="settings-section"><div class="section-title"><h3>Категории</h3></div><div class="inline add-row"><label class="sr-only" for="new-category-title">Новая категория</label><input id="new-category-title" name="new_category_title" placeholder="Новая категория" autocomplete="off"><button class="btn" type="button" id="add-category">Добавить</button></div><div class="stack compact manager-list" id="category-manager"><?php foreach($categories as $c):?><div class="manager-row" data-category-row="<?=$c['id']?>"><label class="sr-only" for="category-title-<?=$c['id']?>">Название категории</label><input id="category-title-<?=$c['id']?>" name="category_titles[<?=$c['id']?>]" value="<?=e($c['title'])?>" data-cat-title="<?=$c['id']?>" autocomplete="off"><button type="button" class="btn small danger" data-cat-delete="<?=$c['id']?>">Удалить</button></div><?php endforeach;?></div></section><section class="settings-section"><div class="section-title"><h3>Теги</h3></div><div class="inline add-row"><label class="sr-only" for="new-tag-name">Новый тег</label><input id="new-tag-name" name="new_tag_name" placeholder="Новый тег" autocomplete="off"><button class="btn" type="button" id="add-tag">Добавить</button></div><div class="stack compact manager-list" id="tag-manager"><?php foreach($tags as $t):?><div class="manager-row" data-tag-row="<?=$t['id']?>"><label class="sr-only" for="tag-title-<?=$t['id']?>">Название тега</label><input id="tag-title-<?=$t['id']?>" name="tag_titles[<?=$t['id']?>]" value="<?=e($t['name'])?>" data-tag-title="<?=$t['id']?>" autocomplete="off"><button type="button" class="btn small danger" data-tag-delete="<?=$t['id']?>">Удалить</button></div><?php endforeach;?></div></section><section class="settings-section danger-zone"><h3>Опасная зона</h3><button type="button" class="btn danger" id="archive-board">Архивировать доску</button></section><div class="settings-savebar"><span class="muted" id="settings-status">Несохранённых изменений нет</span><div class="actions"><button type="button" class="btn ghost" data-close>Закрыть</button><button type="submit" class="btn primary" id="save-board-settings">Сохранить настройки</button></div></div></form></dialog>
+<dialog id="board-settings" class="modal wide settings-modal">
+  <form id="board-settings-form" class="stack" novalidate>
+    <div class="settings-head">
+      <div><h2>Настройки To-do</h2></div>
+      <button type="button" class="icon-btn" data-close aria-label="Закрыть">×</button>
+    </div>
+
+    <section class="settings-section">
+      <h3>Основные данные</h3>
+      <label for="board-title">Название
+        <input id="board-title" name="title" value="<?=e($list['title'])?>" required autocomplete="off">
+      </label>
+      <label for="board-description">Описание
+        <textarea id="board-description" name="description" autocomplete="off"><?=e($list['description'])?></textarea>
+      </label>
+    </section>
+
+    <section class="settings-section">
+      <h3>Видимость</h3>
+      <label for="board-visibility">Кто может просматривать список
+        <select id="board-visibility" name="visibility" autocomplete="off">
+          <option value="TEAM_ONLY" <?=$list['visibility']==='TEAM_ONLY'?'selected':''?>>Только команда (разработчики и основатель)</option>
+          <option value="SELECTED_USERS" <?=$list['visibility']==='SELECTED_USERS'?'selected':''?>>Команда + выбранные обычные пользователи</option>
+          <option value="PUBLIC_READ" <?=$list['visibility']==='PUBLIC_READ'?'selected':''?>>Публичный просмотр по ссылке</option>
+        </select>
+      </label>
+      <p class="field-help" id="visibility-help"></p>
+      <div id="public-link-box" class="public-link-box" <?=$list['visibility']==='PUBLIC_READ' && !empty($list['public_slug'])?'':'hidden'?>>
+        <span class="muted">Публичная ссылка</span>
+        <code id="public-link"><?=!empty($list['public_slug'])?e(absolute_url('/public/todos/'.$list['public_slug'])):''?></code>
+      </div>
+    </section>
+
+    <section class="settings-section" id="viewer-settings">
+      <div class="section-title"><h3>Доступ обычных пользователей</h3><span class="badge"><?=count($normalUsers)?> доступно</span></div>
+      <p class="muted">Отметьте пользователей, которым разрешён только просмотр этого To-do списка.</p>
+      <div class="viewer-list" id="viewer-list">
+        <?php if(!$normalUsers):?><div class="empty-inline">Нет активных пользователей с ролью «Пользователь».</div><?php endif;?>
+        <?php foreach($normalUsers as $nu):?>
+          <label class="viewer-option" for="viewer-<?=$nu['id']?>">
+            <input id="viewer-<?=$nu['id']?>" type="checkbox" name="viewer_ids[]" value="<?=$nu['id']?>" <?=in_array((int)$nu['id'],$viewerIds,true)?'checked':''?> autocomplete="off">
+            <span class="avatar-mini"><?=e(mb_strtoupper(mb_substr($nu['login'],0,1)))?></span>
+            <span><?=e($nu['login'])?></span>
+          </label>
+        <?php endforeach;?>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-title"><h3>Категории</h3></div>
+      <div class="inline add-row">
+        <label class="sr-only" for="new-category-title">Новая категория</label>
+        <input id="new-category-title" name="new_category_title" placeholder="Новая категория" autocomplete="off">
+        <button class="btn" type="button" id="add-category">Добавить</button>
+      </div>
+      <div class="stack compact manager-list" id="category-manager">
+        <?php foreach($categories as $c):?>
+          <div class="manager-row" data-category-row="<?=$c['id']?>">
+            <label class="sr-only" for="category-title-<?=$c['id']?>">Название категории</label>
+            <input id="category-title-<?=$c['id']?>" name="category_titles[<?=$c['id']?>]" value="<?=e($c['title'])?>" data-cat-title="<?=$c['id']?>" autocomplete="off">
+            <button type="button" class="btn small danger" data-cat-delete="<?=$c['id']?>">Удалить</button>
+          </div>
+        <?php endforeach;?>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-title"><h3>Теги</h3></div>
+      <div class="inline add-row">
+        <label class="sr-only" for="new-tag-name">Новый тег</label>
+        <input id="new-tag-name" name="new_tag_name" placeholder="Новый тег" autocomplete="off">
+        <button class="btn" type="button" id="add-tag">Добавить</button>
+      </div>
+      <div class="stack compact manager-list" id="tag-manager">
+        <?php foreach($tags as $t):?>
+          <div class="manager-row" data-tag-row="<?=$t['id']?>">
+            <label class="sr-only" for="tag-title-<?=$t['id']?>">Название тега</label>
+            <input id="tag-title-<?=$t['id']?>" name="tag_titles[<?=$t['id']?>]" value="<?=e($t['name'])?>" data-tag-title="<?=$t['id']?>" autocomplete="off">
+            <button type="button" class="btn small danger" data-tag-delete="<?=$t['id']?>">Удалить</button>
+          </div>
+        <?php endforeach;?>
+      </div>
+    </section>
+
+    <section class="settings-section danger-zone">
+      <h3>Опасная зона</h3>
+      <button type="button" class="btn danger" id="archive-board">Архивировать доску</button>
+    </section>
+
+    <div class="settings-savebar">
+      <span class="muted" id="settings-status">Несохранённых изменений нет</span>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>Закрыть</button>
+        <button type="submit" class="btn primary" id="save-board-settings">Сохранить настройки</button>
+      </div>
+    </div>
+  </form>
+</dialog>
 <?php endif;?>
-<script>window.BOARD={id:<?=$list['id']?>,canWrite:<?=in_array($user['role'],['developer','founder'],true)?'true':'false'?>,founder:<?=$user['role']==='founder'?'true':'false'?>,visibility:<?=json_encode($list['visibility'])?>,tags:<?=json_encode(array_map(fn($t)=>['id'=>(int)$t['id'],'name'=>$t['name']],$tags),JSON_UNESCAPED_UNICODE)?>};</script>
+<script nonce="<?=e(csp_nonce())?>">window.BOARD={id:<?=$list['id']?>,canWrite:<?=in_array($user['role'],['developer','founder'],true)?'true':'false'?>,founder:<?=$user['role']==='founder'?'true':'false'?>,visibility:<?=json_for_script($list['visibility'])?>,tags:<?=json_for_script(array_map(fn($t)=>['id'=>(int)$t['id'],'name'=>$t['name']],$tags))?>};</script>

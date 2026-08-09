@@ -1,6 +1,22 @@
+# Runtime configuration and credentials
 /config.php
+/.env
+/.env.*
+!/config.example.php
+/docs/dostup.txt
+
+# Composer and runtime data
+/vendor/
+/composer.phar
 /storage/logs/*.log
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+/storage/cache/
+/storage/sessions/
+
+# Local tools
+/AGENTS.md
+/.idea/
+/.vscode/
+/.fleet/
+/.phpunit.result.cache
+/.DS_Store
+/Thumbs.db

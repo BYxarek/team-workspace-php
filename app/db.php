@@ -9,7 +9,7 @@ function db(): PDO {
 
     $host = (string) config('database.host', '127.0.0.1');
     $port = (int) config('database.port', 3306);
-    $name = (string) config('database.database', 'team_workspace');
+    $name = (string) config('database.database', 'corp_site');
     $charset = (string) config('database.charset', 'utf8mb4');
     $username = (string) config('database.username', 'root');
     $password = (string) config('database.password', '');

@@ -2,19 +2,32 @@ DirectoryIndex index.php
 Options -Indexes
 
 RewriteEngine On
-RewriteBase /
 
+# Block hidden files/directories such as .git (except ACME .well-known).
+RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]
+RewriteBase /github/corp-site/
+
+# Статические ресурсы
 RewriteRule ^assets/(.*)$ public/assets/$1 [L]
-RewriteRule ^(?:app|database|storage|docs)(?:/|$) - [F,L]
 
-<FilesMatch "^(config\.php|config\.example\.php)$">
+# Закрытые каталоги и конфигурация
+RewriteRule ^(?:app|database|storage|docs|tests|vendor)(?:/|$) - [F,L]
+<FilesMatch "^(config\.php|config\.example\.php|deploy-check\.php|composer\.json|composer\.lock)$">
     Require all denied
 </FilesMatch>
 
-ErrorDocument 403 /errors/403.php
-ErrorDocument 404 /errors/404.php
-ErrorDocument 500 /errors/500.php
+# Страницы ошибок Apache в стиле сайта
+ErrorDocument 403 /github/corp-site/errors/403.php
+ErrorDocument 404 /github/corp-site/errors/404.php
+ErrorDocument 500 /github/corp-site/errors/500.php
 
+# Front controller
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

@@ -11,28 +11,28 @@ if(str_starts_with($path,'/api/')) require __DIR__.'/api/router.php';
 if($path==='/' ) { current_user()?redirect('/dashboard'):redirect('/login'); }
 if($path==='/login'){
   if(current_user()) redirect('/dashboard'); $error=null;
-  if($method==='POST'){ verify_csrf($_POST['_csrf']??null); $login=trim($_POST['login']??''); $pass=$_POST['password']??''; $st=db()->prepare('SELECT * FROM users WHERE login=? LIMIT 1'); $st->execute([$login]); $u=$st->fetch(); if(!$u || !$u['is_active'] || !password_verify($pass,$u['password_hash'])) $error='Неверный логин или пароль.'; else { session_regenerate_id(true); $_SESSION['uid']=$u['id']; db()->prepare('UPDATE users SET last_login_at=NOW() WHERE id=?')->execute([$u['id']]); redirect('/dashboard'); }}
+  if($method==='POST'){ verify_csrf($_POST['_csrf']??null);if(setting('password_login_enabled','1')!=='1'){http_response_code(403);$error='Вход по паролю отключён. Используйте Passkey.';}else{$login=trim((string)($_POST['login']??'')); $pass=(string)($_POST['password']??''); $retry=max(rate_limit_retry_after('login-account',$login,5,900),rate_limit_retry_after('login-ip','',25,900)); if($retry>0){http_response_code(429);$error='Слишком много попыток входа. Повторите позже.';} else { $st=db()->prepare('SELECT * FROM users WHERE login=? LIMIT 1'); $st->execute([$login]); $u=$st->fetch(); $verified=password_verify($pass,$u['password_hash']??'$argon2id$v=19$m=65536,t=4,p=1$ZjJpZVNaN203SDJZYXBtQQ$QVEpcweolqbfykY7iBjVPz0JAv07lmBP99LmbCGwewQ'); if(!$u || !$u['is_active'] || !$verified) { rate_limit_hit('login-account',$login,900);rate_limit_hit('login-ip','',900);$error='Неверный логин или пароль.'; } else { rate_limit_clear('login-account',$login);if(password_needs_rehash((string)$u['password_hash'],PASSWORD_ARGON2ID))db()->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($pass,PASSWORD_ARGON2ID),$u['id']]);session_regenerate_id(true);rotate_csrf_token();$_SESSION['uid']=$u['id'];db()->prepare('UPDATE users SET last_login_at=NOW() WHERE id=?')->execute([$u['id']]);redirect('/dashboard'); } }}}
   render_page('login',['title'=>'Вход','error'=>$error]); exit;
 }
 if($path==='/register'){
   if(current_user()) redirect('/dashboard'); $error=null;
-  if($method==='POST'){ verify_csrf($_POST['_csrf']??null); if(setting('registration_enabled','1')!=='1') $error='Регистрация временно закрыта.'; else { $login=trim($_POST['login']??''); $pass=$_POST['password']??''; $pc=$_POST['password_confirmation']??''; if(!preg_match('/^[A-Za-z0-9_-]{3,32}$/',$login))$error='Логин: 3–32 символа, латиница, цифры, _ и -.'; elseif(strlen($pass)<8)$error='Пароль должен быть не короче 8 символов.'; elseif($pass!==$pc)$error='Пароли не совпадают.'; else { try{$st=db()->prepare("INSERT INTO users(login,password_hash,role) VALUES (?,?,'user')");$st->execute([$login,password_hash($pass,PASSWORD_ARGON2ID)]);$id=(int)db()->lastInsertId();event_log('USER_REGISTERED',"Зарегистрирован пользователь $login",$id);redirect('/login');}catch(PDOException $e){$error='Этот логин уже занят.';} } }}
+  if($method==='POST'){ verify_csrf($_POST['_csrf']??null); $retry=rate_limit_retry_after('register-ip','',5,3600); if($retry>0){http_response_code(429);$error='Слишком много попыток регистрации. Повторите позже.';} elseif(setting('registration_enabled','1')!=='1') $error='Регистрация временно закрыта.'; else { rate_limit_hit('register-ip','',3600);$login=trim((string)($_POST['login']??'')); $pass=(string)($_POST['password']??''); $pc=(string)($_POST['password_confirmation']??''); if(!preg_match('/^[A-Za-z0-9_-]{3,32}$/',$login))$error='Логин: 3–32 символа, латиница, цифры, _ и -.'; elseif(strlen($pass)<8)$error='Пароль должен быть не короче 8 символов.'; elseif($pass!==$pc)$error='Пароли не совпадают.'; else { try{$st=db()->prepare("INSERT INTO users(login,password_hash,role) VALUES (?,?,'user')");$st->execute([$login,password_hash($pass,PASSWORD_ARGON2ID)]);$id=(int)db()->lastInsertId();event_log('USER_REGISTERED',"Зарегистрирован пользователь $login",$id);if(setting('password_login_enabled','1')!=='1'){session_regenerate_id(true);rotate_csrf_token();$_SESSION['uid']=$id;$_SESSION['passkey_setup_required']=1;redirect('/profile');}redirect('/login');}catch(PDOException $e){$error='Этот логин уже занят.';} } }}
   render_page('register',['title'=>'Регистрация','error'=>$error]); exit;
 }
-if($path==='/logout' && $method==='POST'){ verify_csrf($_POST['_csrf']??null); $_SESSION=[]; session_destroy(); redirect('/login'); }
+if($path==='/logout' && $method==='POST'){ verify_csrf($_POST['_csrf']??null); destroy_session(); redirect('/login'); }
 if($path==='/dashboard'){
   $u=require_auth(); $events=recent_visible_events($u,5);
-  if($u['role']==='user'){ $st=db()->prepare("SELECT COUNT(DISTINCT l.id) FROM todo_lists l LEFT JOIN todo_list_viewers v ON v.todo_list_id=l.id AND v.user_id=? WHERE l.is_archived=0 AND (l.visibility='PUBLIC_READ' OR (l.visibility='SELECTED_USERS' AND v.user_id IS NOT NULL))");$st->execute([$u['id']]);$boardCount=(int)$st->fetchColumn(); } else $boardCount=(int)db()->query('SELECT COUNT(*) FROM todo_lists WHERE is_archived=0')->fetchColumn();
+  if($u['role']==='user'){ $st=db()->prepare("SELECT COUNT(DISTINCT l.id) FROM todo_lists l LEFT JOIN todo_list_viewers v ON v.todo_list_id=l.id AND v.user_id=? WHERE l.is_archived=0 AND l.visibility='SELECTED_USERS' AND v.user_id IS NOT NULL");$st->execute([$u['id']]);$boardCount=(int)$st->fetchColumn(); } else $boardCount=(int)db()->query('SELECT COUNT(*) FROM todo_lists WHERE is_archived=0')->fetchColumn();
   render_page('dashboard',compact('events','boardCount')+['title'=>'Главная']);exit;
 }
 if($path==='/profile'){
-  $u=require_auth(); if($method==='POST'){verify_csrf($_POST['_csrf']??null);if(($_POST['action']??'')==='password' && strlen($_POST['password']??'')>=8){db()->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($_POST['password'],PASSWORD_ARGON2ID),$u['id']]);redirect('/profile');}}
-  render_page('profile',['title'=>'Профиль']);exit;
+  $u=require_auth();$profileError=null;$profileSuccess=null;if($method==='POST'){verify_csrf($_POST['_csrf']??null);if(($_POST['action']??'')==='password'){ $subject=(string)$u['id'];$retry=rate_limit_retry_after('password-change',$subject,5,900);$current=(string)($_POST['current_password']??'');$newPassword=(string)($_POST['password']??'');$st=db()->prepare('SELECT password_hash FROM users WHERE id=?');$st->execute([$u['id']]);$hash=(string)$st->fetchColumn();if($retry>0){http_response_code(429);$profileError='Слишком много попыток. Повторите позже.';}elseif(!password_verify($current,$hash)){rate_limit_hit('password-change',$subject,900);$profileError='Текущий пароль указан неверно.';}elseif(strlen($newPassword)<8)$profileError='Новый пароль должен быть не короче 8 символов.';else{rate_limit_clear('password-change',$subject);db()->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($newPassword,PASSWORD_ARGON2ID),$u['id']]);session_regenerate_id(true);rotate_csrf_token();$profileSuccess='Пароль обновлён.';}}}
+  $st=db()->prepare('SELECT id,name,created_at,last_used_at FROM user_passkeys WHERE user_id=? ORDER BY id DESC');$st->execute([$u['id']]);$passkeys=$st->fetchAll();render_page('profile',['title'=>'Профиль','profileError'=>$profileError,'profileSuccess'=>$profileSuccess,'passkeys'=>$passkeys]);exit;
 }
 if($path==='/todos'){
   $u=require_auth();
-  if($method==='POST'){if($u['role']!=='founder') {http_response_code(403);exit;}verify_csrf($_POST['_csrf']??null);$title=trim($_POST['title']??'');if($title!==''){db()->prepare('INSERT INTO todo_lists(title,description,created_by) VALUES (?,?,?)')->execute([$title,trim($_POST['description']??''),$u['id']]);$id=(int)db()->lastInsertId();foreach(['Backlog','To Do','In Progress','Done'] as $i=>$c)db()->prepare('INSERT INTO todo_categories(todo_list_id,title,position) VALUES (?,?,?)')->execute([$id,$c,$i]);audit($id,null,$u['id'],'TODO_LIST_CREATED');event_log('TODO_LIST_CREATED',"Создан To-do список «$title»",$u['id'],$id);redirect('/todos/'.$id);}}
-  if($u['role']==='user'){$st=db()->prepare("SELECT DISTINCT l.* FROM todo_lists l LEFT JOIN todo_list_viewers v ON v.todo_list_id=l.id AND v.user_id=? WHERE l.is_archived=0 AND (l.visibility='PUBLIC_READ' OR (l.visibility='SELECTED_USERS' AND v.user_id IS NOT NULL)) ORDER BY l.position,l.id");$st->execute([$u['id']]);$lists=$st->fetchAll();}else{$lists=db()->query('SELECT * FROM todo_lists WHERE is_archived=0 ORDER BY position,id')->fetchAll();}
+  if($method==='POST'){if($u['role']!=='founder') {http_response_code(403);exit;}verify_csrf($_POST['_csrf']??null);$title=trim((string)($_POST['title']??''));$description=trim((string)($_POST['description']??''));if(mb_strlen($title)>160||mb_strlen($description)>20000){http_response_code(422);render_page('todos',['lists'=>[],'title'=>'To-do']);exit;}if($title!==''){db()->prepare('INSERT INTO todo_lists(title,description,created_by) VALUES (?,?,?)')->execute([$title,$description,$u['id']]);$id=(int)db()->lastInsertId();foreach(['Backlog','To Do','In Progress','Done'] as $i=>$c)db()->prepare('INSERT INTO todo_categories(todo_list_id,title,position) VALUES (?,?,?)')->execute([$id,$c,$i]);audit($id,null,$u['id'],'TODO_LIST_CREATED');event_log('TODO_LIST_CREATED',"Создан To-do список «$title»",$u['id'],$id);redirect('/todos/'.$id);}}
+  if($u['role']==='user'){$st=db()->prepare("SELECT DISTINCT l.* FROM todo_lists l LEFT JOIN todo_list_viewers v ON v.todo_list_id=l.id AND v.user_id=? WHERE l.is_archived=0 AND l.visibility='SELECTED_USERS' AND v.user_id IS NOT NULL ORDER BY l.position,l.id");$st->execute([$u['id']]);$lists=$st->fetchAll();}else{$lists=db()->query('SELECT * FROM todo_lists WHERE is_archived=0 ORDER BY position,id')->fetchAll();}
   render_page('todos',compact('lists')+['title'=>'To-do']);exit;
 }
 if(preg_match('#^/todos/(\d+)$#',$path,$m)){
@@ -42,7 +42,7 @@ if(preg_match('#^/todos/(\d+)$#',$path,$m)){
   render_page('board',compact('list','categories','tags','normalUsers','viewerIds')+['title'=>$list['title']]);exit;
 }
 if(preg_match('#^/public/todos/([A-Za-z0-9_-]{20,64})$#',$path,$m)){
-  $st=db()->prepare("SELECT * FROM todo_lists WHERE public_slug=? AND visibility='PUBLIC_READ' AND is_archived=0");$st->execute([$m[1]]);$list=$st->fetch();if(!$list){http_response_code(404);render_page('404',['title'=>'Не найдено']);exit;}require dirname(__DIR__).'/app/views/public_board.php';exit;
+  no_store_headers();$st=db()->prepare("SELECT * FROM todo_lists WHERE public_slug=? AND visibility='PUBLIC_READ' AND is_archived=0");$st->execute([$m[1]]);$list=$st->fetch();if(!$list){http_response_code(404);render_page('404',['title'=>'Не найдено']);exit;}require dirname(__DIR__).'/app/views/public_board.php';exit;
 }
 if($path==='/admin'){
   require_role('founder');
@@ -64,12 +64,14 @@ if($path==='/admin/users'){
       $targetId=(int)($_POST['id']??0);
       if($targetId===(int)$u['id']){ $_SESSION['flash_error']='Нельзя изменять собственную роль или статус.'; redirect('/admin/users'); }
       $role=(string)($_POST['role']??'user');if(!in_array($role,['user','developer','founder'],true))$role='user';
-      db()->prepare('UPDATE users SET role=?,is_active=? WHERE id=?')->execute([$role,(int)($_POST['is_active']??1),$targetId]);
+      $active=(int)($_POST['is_active']??1);if($active&&setting('password_login_enabled','1')!=='1'){$st=db()->prepare('SELECT 1 FROM user_passkeys WHERE user_id=? LIMIT 1');$st->execute([$targetId]);if(!$st->fetchColumn()){$_SESSION['flash_error']='Нельзя активировать пользователя без Passkey, пока вход по паролю отключён.';redirect('/admin/users');}}
+      db()->prepare('UPDATE users SET role=?,is_active=? WHERE id=?')->execute([$role,$active,$targetId]);
       event_log('USER_ROLE_CHANGED','Изменены права пользователя',$u['id'],null,null,['user_id'=>$targetId]);
       $_SESSION['flash_success']='Пользователь обновлён.';
     } elseif($a==='user_create') {
       $login=trim((string)($_POST['login']??''));$pass=(string)($_POST['password']??'');$role=(string)($_POST['role']??'user');
-      if(!preg_match('/^[A-Za-z0-9_-]{3,32}$/',$login)) $_SESSION['flash_error']='Логин: 3–32 символа, латиница, цифры, _ и -.';
+      if(setting('password_login_enabled','1')!=='1') $_SESSION['flash_error']='При отключённом входе по паролю создавайте аккаунт через регистрацию, чтобы сразу добавить Passkey.';
+      elseif(!preg_match('/^[A-Za-z0-9_-]{3,32}$/',$login)) $_SESSION['flash_error']='Логин: 3–32 символа, латиница, цифры, _ и -.';
       elseif(strlen($pass)<8) $_SESSION['flash_error']='Пароль должен быть не короче 8 символов.';
       elseif(!in_array($role,['user','developer','founder'],true)) $_SESSION['flash_error']='Некорректная роль.';
       else { try { db()->prepare('INSERT INTO users(login,password_hash,role,is_active) VALUES (?,?,?,1)')->execute([$login,password_hash($pass,PASSWORD_ARGON2ID),$role]); $newId=(int)db()->lastInsertId(); event_log('USER_CREATED','Администратор создал пользователя '.$login,$u['id'],null,null,['user_id'=>$newId,'role'=>$role]); $_SESSION['flash_success']='Пользователь создан.'; } catch(PDOException) { $_SESSION['flash_error']='Пользователь с таким логином уже существует.'; } }
@@ -87,10 +89,14 @@ if($path==='/admin/registration'){
     if(($_POST['action']??'')==='toggle_registration'){
       $new=setting('registration_enabled','1')==='1'?'0':'1';set_setting('registration_enabled',$new,$u['id']);
       event_log($new==='1'?'REGISTRATION_ENABLED':'REGISTRATION_DISABLED',$new==='1'?'Регистрация включена':'Регистрация отключена',$u['id']);
+    } elseif(($_POST['action']??'')==='toggle_password_login'){
+      $new=setting('password_login_enabled','1')==='1'?'0':'1';
+      if($new==='0'){$missing=(int)db()->query('SELECT COUNT(*) FROM users u WHERE u.is_active=1 AND NOT EXISTS (SELECT 1 FROM user_passkeys p WHERE p.user_id=u.id)')->fetchColumn();if($missing>0){$_SESSION['flash_error']='Сначала добавьте Passkey всем активным пользователям.';redirect('/admin/registration');}}
+      set_setting('password_login_enabled',$new,$u['id']);event_log($new==='1'?'PASSWORD_LOGIN_ENABLED':'PASSWORD_LOGIN_DISABLED',$new==='1'?'Вход по паролю включён':'Вход по паролю отключён',$u['id']);
     }
     redirect('/admin/registration');
   }
-  render_page('admin_registration',['title'=>'Регистрация']);exit;
+  $missingPasskeys=(int)db()->query('SELECT COUNT(*) FROM users u WHERE u.is_active=1 AND NOT EXISTS (SELECT 1 FROM user_passkeys p WHERE p.user_id=u.id)')->fetchColumn();$flashError=$_SESSION['flash_error']??null;unset($_SESSION['flash_error']);render_page('admin_registration',['title'=>'Регистрация','missingPasskeys'=>$missingPasskeys,'flashError'=>$flashError]);exit;
 }
 if($path==='/admin/archive'){
   $u=require_role('founder');

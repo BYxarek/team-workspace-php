@@ -9,6 +9,7 @@
   <?php if(setting('registration_enabled','1')!=='1'):?>
     <div class="alert">Регистрация временно закрыта.</div>
   <?php else:?>
+    <?php if(setting('password_login_enabled','1')!=='1'):?><div class="alert">После регистрации потребуется сразу добавить Passkey.</div><?php endif;?>
     <form method="post" class="stack" id="register-form" novalidate>
       <input type="hidden" name="_csrf" value="<?=e(csrf_token())?>">
 

@@ -2,11 +2,11 @@
 
 **Repository name:** `team-workspace-php`
 
-**Description:** Self-hosted team workspace with role-based access, Kanban To-do boards, audit logs and public read-only sharing. PHP 8.2 + MySQL 8.0.
+**Description:** Self-hosted PHP team workspace with Passkey authentication, RBAC, Kanban boards, audit logs and public read-only sharing.
 
 **Topics:**
 
-`php` `mysql` `apache` `kanban` `todo` `team-management` `internal-tools` `rbac` `ajax` `self-hosted` `dark-theme`
+`php` `mysql` `apache` `composer` `passkeys` `webauthn` `kanban` `todo` `team-management` `internal-tools` `rbac` `self-hosted`
 
 **Visibility:** Public
 

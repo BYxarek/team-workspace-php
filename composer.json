@@ -1,0 +1,8 @@
+{
+    "name": "byxarek/team-workspace-php",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require": {
+        "lbuchs/webauthn": "^2.2"
+    }
+}

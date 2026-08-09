@@ -16,7 +16,7 @@
     <div id="board" class="kanban public" data-public-slug="<?=e($list['public_slug'])?>"></div>
   </main>
   <div id="toast" class="toast"></div>
-  <script>window.CSRF='';window.APP_BASE=<?=json_encode(base_path(),JSON_UNESCAPED_SLASHES)?>;window.PUBLIC_BOARD={slug:<?=json_encode($list['public_slug'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>};</script>
+  <script nonce="<?=e(csp_nonce())?>">window.CSRF='';window.APP_BASE=<?=json_for_script(base_path())?>;window.PUBLIC_BOARD={slug:<?=json_for_script($list['public_slug'])?>};</script>
   <script src="<?=e(url('/assets/app.js'))?>"></script>
 </body>
 </html>

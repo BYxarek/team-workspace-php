@@ -11,4 +11,5 @@
     <article class="card stat-card"><span class="stat-icon"><?=icon('user')?></span><span class="muted">Обычных пользователей</span><strong><?=number_format($stats['regular_users'],0,'',' ')?></strong></article>
   </section>
   <section class="card online-panel"><div class="section-title"><h2>Сейчас онлайн</h2><span class="section-count"><?=count($onlineUsers)?> активных</span></div><div class="online-users"><?php if(!$onlineUsers):?><span class="muted">Активных пользователей за последние 5 минут нет.</span><?php endif;?><?php foreach($onlineUsers as $ou):?><div class="online-user"><span class="online-dot"></span><div><strong><?=e($ou['login'])?></strong><small><?=e($ou['role'])?></small></div></div><?php endforeach;?></div></section>
+
 </div>

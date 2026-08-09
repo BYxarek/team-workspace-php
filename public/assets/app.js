@@ -8,6 +8,9 @@ function closeDialog(el){const d=typeof el==='string'?document.getElementById(el
 $$('[data-open]').forEach(b=>b.addEventListener('click',()=>openDialog(b.dataset.open)));
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b)));
 $$('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
+$$('dialog[data-auto-open]').forEach(d=>{if(!d.open)d.showModal()});
+$$('[data-history-back]').forEach(b=>b.addEventListener('click',()=>history.back()));
+
 
 function renderTodoLists(lists){
   const grid=$('#todo-lists-grid');if(!grid)return;grid.innerHTML='';
@@ -98,6 +101,27 @@ $$('[data-tag-delete]').forEach(bindTagDelete);
 
 $('#archive-board')?.addEventListener('click',async()=>{if(!confirm('Архивировать эту доску?'))return;try{await api(`/api/todo-lists/${BOARD.id}`,{method:'PATCH',body:JSON.stringify({is_archived:true})});location.href=appUrl('/todos')}catch(e){toast(e.message)}});
 
+// Registration validation: readable feedback in the page instead of browser pattern errors.
 const registerForm=$('#register-form'), registerLogin=$('#register-login'), loginWarning=$('#login-warning');
 function validateRegisterLogin(showEmpty=false){if(!registerLogin||!loginWarning)return true;const value=registerLogin.value.trim();let message='';if(!value&&showEmpty)message='Введите логин.';else if(value&&/[^A-Za-z0-9_-]/.test(value))message='Логин содержит недопустимые символы. Используйте только латинские буквы, цифры, _ и -.';else if(value&&value.length<3)message='Логин должен содержать минимум 3 символа.';else if(value.length>32)message='Логин должен содержать не более 32 символов.';loginWarning.textContent=message;loginWarning.hidden=!message;registerLogin.classList.toggle('input-invalid',!!message);return !message}
 registerLogin?.addEventListener('input',()=>validateRegisterLogin(false));registerLogin?.addEventListener('blur',()=>validateRegisterLogin(true));registerForm?.addEventListener('submit',e=>{if(!validateRegisterLogin(true)){e.preventDefault();registerLogin?.focus()}});
+
+function passkeyDecode(value){const base64=String(value).replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(value.length/4)*4,'=');return Uint8Array.from(atob(base64),c=>c.charCodeAt(0)).buffer}
+function passkeyEncode(value){const bytes=new Uint8Array(value);let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function passkeySupported(){if(!window.PublicKeyCredential){toast('Этот браузер не поддерживает Passkey.');return false}return true}
+
+$('#passkey-login-button')?.addEventListener('click',async e=>{
+  if(!passkeySupported())return;const button=e.currentTarget,login=$('#login-username');if(!login?.reportValidity())return;button.disabled=true;
+  try{const options=(await api('/api/passkeys/login/options',{method:'POST',body:JSON.stringify({login:login.value})})).publicKey;options.challenge=passkeyDecode(options.challenge);options.allowCredentials=(options.allowCredentials||[]).map(item=>({...item,id:passkeyDecode(item.id)}));const credential=await navigator.credentials.get({publicKey:options});const result=await api('/api/passkeys/login',{method:'POST',body:JSON.stringify({rawId:passkeyEncode(credential.rawId),response:{clientDataJSON:passkeyEncode(credential.response.clientDataJSON),authenticatorData:passkeyEncode(credential.response.authenticatorData),signature:passkeyEncode(credential.response.signature),userHandle:credential.response.userHandle?passkeyEncode(credential.response.userHandle):null}})});location.href=result.redirect}
+  catch(error){if(error.name!=='NotAllowedError')toast(error.message||'Не удалось войти с Passkey.')}
+  finally{button.disabled=false}
+});
+
+$('#passkey-register-form')?.addEventListener('submit',async e=>{
+  e.preventDefault();if(!passkeySupported())return;const form=e.currentTarget;if(!form.reportValidity())return;const button=$('button',form);button.disabled=true;
+  try{const options=(await api('/api/passkeys/register/options',{method:'POST',body:'{}'})).publicKey;options.challenge=passkeyDecode(options.challenge);options.user.id=passkeyDecode(options.user.id);options.excludeCredentials=(options.excludeCredentials||[]).map(item=>({...item,id:passkeyDecode(item.id)}));const credential=await navigator.credentials.create({publicKey:options});await api('/api/passkeys/register',{method:'POST',body:JSON.stringify({name:new FormData(form).get('name'),rawId:passkeyEncode(credential.rawId),transports:credential.response.getTransports?.()||[],response:{clientDataJSON:passkeyEncode(credential.response.clientDataJSON),attestationObject:passkeyEncode(credential.response.attestationObject)}})});location.reload()}
+  catch(error){if(error.name!=='NotAllowedError')toast(error.message||'Не удалось добавить Passkey.')}
+  finally{button.disabled=false}
+});
+
+$$('[data-passkey-delete]').forEach(button=>button.addEventListener('click',async()=>{if(!confirm('Удалить этот Passkey?'))return;button.disabled=true;try{await api(`/api/passkeys/${button.dataset.passkeyDelete}`,{method:'DELETE'});button.closest('[data-passkey-row]')?.remove();toast('Passkey удалён')}catch(error){toast(error.message);button.disabled=false}}));
