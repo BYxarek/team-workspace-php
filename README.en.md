@@ -2,11 +2,11 @@
 
 [Русский](README.md)
 
-[![Version](https://img.shields.io/badge/version-1.0.0-7c5cff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.1-7c5cff)](CHANGELOG.md)
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/)
 [![CI](https://github.com/BYxarek/team-workspace-php/actions/workflows/ci.yml/badge.svg)](https://github.com/BYxarek/team-workspace-php/actions/workflows/ci.yml)
 
-A self-hosted team workspace built with Apache, PHP 8.2 and MySQL 8.0. Current version: **1.0.0**.
+A self-hosted team workspace built with Apache, PHP 8.2 and MySQL 8.0. Current version: **1.0.1**.
 
 ## Features
 

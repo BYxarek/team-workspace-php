@@ -2,7 +2,7 @@
 declare(strict_types=1);
 function e(?string $v): string { return htmlspecialchars($v ?? '', ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function app_name(): string { return (string)config('app.name','Team Workspace'); }
-function app_version(): string { return (string)config('app.version','1.0.0'); }
+function app_version(): string { return (string)config('app.version','1.0.1'); }
 function base_path(): string { $base=(string)config('app.base_path',''); $base='/'.trim($base,'/'); return $base==='/'?'':$base; }
 function url(string $path=''): string { $base=base_path(); $path='/'.ltrim($path,'/'); return $base.($path==='/'?'/':$path); }
 function absolute_url(string $path=''): string { return rtrim((string)config('app.url',''),' /').url($path); }
@@ -42,23 +42,16 @@ function client_ip(): string {
 function rate_limit_key(string $bucket,string $subject=''): string {
     return hash('sha256',$bucket.'|'.client_ip().'|'.mb_strtolower(trim($subject),'UTF-8'));
 }
-function rate_limit_retry_after(string $bucket,string $subject,int $maxAttempts,int $windowSeconds): int {
+function rate_limit_consume(string $bucket,string $subject,int $maxAttempts,int $windowSeconds): int {
     try {
-        $key=rate_limit_key($bucket,$subject);
-        $st=db()->prepare('SELECT attempts,window_started_at FROM auth_rate_limits WHERE key_hash=?');
-        $st->execute([$key]);$row=$st->fetch();if(!$row)return 0;
-        $started=strtotime((string)$row['window_started_at']);
-        if(!$started || $started<=time()-$windowSeconds){db()->prepare('DELETE FROM auth_rate_limits WHERE key_hash=?')->execute([$key]);return 0;}
-        if((int)$row['attempts']<$maxAttempts)return 0;
-        return max(1,$windowSeconds-(time()-$started));
-    } catch(Throwable) { return 0; }
-}
-function rate_limit_hit(string $bucket,string $subject,int $windowSeconds): void {
-    try {
-        $key=rate_limit_key($bucket,$subject);$windowSeconds=max(1,$windowSeconds);
+        $key=rate_limit_key($bucket,$subject);$maxAttempts=max(1,$maxAttempts);$windowSeconds=max(1,$windowSeconds);
         $sql="INSERT INTO auth_rate_limits(key_hash,attempts,window_started_at,last_attempt_at) VALUES (?,1,NOW(),NOW()) ON DUPLICATE KEY UPDATE attempts=IF(window_started_at<=NOW()-INTERVAL {$windowSeconds} SECOND,1,attempts+1),window_started_at=IF(window_started_at<=NOW()-INTERVAL {$windowSeconds} SECOND,NOW(),window_started_at),last_attempt_at=NOW()";
         db()->prepare($sql)->execute([$key]);
-    } catch(Throwable) {}
+        $st=db()->prepare('SELECT attempts,window_started_at FROM auth_rate_limits WHERE key_hash=?');$st->execute([$key]);$row=$st->fetch();
+        if(!$row || (int)$row['attempts']<=$maxAttempts)return 0;
+        $started=strtotime((string)$row['window_started_at']);if(!$started)return $windowSeconds;
+        return max(1,$windowSeconds-(time()-$started));
+    } catch(Throwable) { return 0; }
 }
 function rate_limit_clear(string $bucket,string $subject): void {
     try { db()->prepare('DELETE FROM auth_rate_limits WHERE key_hash=?')->execute([rate_limit_key($bucket,$subject)]); } catch(Throwable) {}
@@ -99,8 +92,9 @@ function destroy_session(): void {
     if(session_status()===PHP_SESSION_ACTIVE)session_destroy();
 }
 function verify_csrf(?string $token=null): void { $token=$token ?? ($_POST['_csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)); if(!$token || !hash_equals($_SESSION['csrf'] ?? '', $token)) json_response(['ok'=>false,'error'=>'CSRF validation failed'],419); }
-function current_user(): ?array { if(empty($_SESSION['uid'])) return null; static $u=false; if($u!==false) return $u?:null; $st=db()->prepare('SELECT id,login,role,is_active,created_at,last_login_at FROM users WHERE id=? LIMIT 1'); $st->execute([$_SESSION['uid']]); $u=$st->fetch(); if(!$u || !$u['is_active']) { destroy_session(); return null; } touch_user_activity((int)$u['id']); return $u; }
+function current_user(): ?array { if(empty($_SESSION['uid'])) return null; static $u=false; if($u!==false) return $u?:null; $st=db()->prepare('SELECT id,login,role,is_active,auth_version,created_at,last_login_at FROM users WHERE id=? LIMIT 1'); $st->execute([$_SESSION['uid']]); $u=$st->fetch(); if(!$u || !$u['is_active'] || !hash_equals((string)$u['auth_version'],(string)($_SESSION['auth_version']??''))) { destroy_session(); if(session_status()!==PHP_SESSION_ACTIVE)session_start(); $u=null; return null; } touch_user_activity((int)$u['id']); return $u; }
 function require_auth(): array { $u=current_user(); if(!$u) { if(is_api_request()) json_response(['ok'=>false,'error'=>'Unauthorized'],401); redirect('/login'); } if(!empty($_SESSION['passkey_setup_required'])&&!in_array(request_path(),['/profile','/api/passkeys/register/options','/api/passkeys/register','/logout'],true)){if(is_api_request())json_response(['ok'=>false,'error'=>'Сначала добавьте Passkey.'],403);redirect('/profile');} no_store_headers(); return $u; }
+function require_recent_auth(): array { $u=require_auth(); if(empty($_SESSION['passkey_setup_required']) && (int)($_SESSION['reauthenticated_at']??0)<time()-300) json_response(['ok'=>false,'error'=>'Для добавления Passkey войдите в аккаунт заново.'],403); return $u; }
 function role_rank(string $r): int { return ['user'=>1,'developer'=>2,'founder'=>3][$r] ?? 0; }
 function require_role(string ...$roles): array { $u=require_auth(); if(!in_array($u['role'],$roles,true)) { if(is_api_request()) json_response(['ok'=>false,'error'=>'Forbidden'],403); http_response_code(403); render_page('403',['title'=>'Нет доступа']); exit; } return $u; }
 function setting(string $key, mixed $default=null): mixed { static $cache=[]; if(array_key_exists($key,$cache)) return $cache[$key]; try { $st=db()->prepare('SELECT value FROM system_settings WHERE `key`=?'); $st->execute([$key]); $r=$st->fetchColumn(); return $cache[$key]=$r===false?$default:$r; } catch(Throwable) { return $default; } }
@@ -168,6 +162,8 @@ function ensure_runtime_schema(): void {
         $st=db()->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='users' AND COLUMN_NAME='last_seen_at'");
         $st->execute([$db]);
         if(!(int)$st->fetchColumn()) db()->exec('ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP NULL DEFAULT NULL AFTER last_login_at');
+        $st=db()->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='users' AND COLUMN_NAME='auth_version'");$st->execute([$db]);
+        if(!(int)$st->fetchColumn()) db()->exec('ALTER TABLE users ADD COLUMN auth_version INT UNSIGNED NOT NULL DEFAULT 1 AFTER is_active');
         db()->exec("CREATE TABLE IF NOT EXISTS auth_rate_limits (key_hash CHAR(64) PRIMARY KEY, attempts INT UNSIGNED NOT NULL DEFAULT 0, window_started_at DATETIME NOT NULL, last_attempt_at DATETIME NOT NULL, INDEX(last_attempt_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         db()->exec("CREATE TABLE IF NOT EXISTS user_passkeys (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id BIGINT UNSIGNED NOT NULL,name VARCHAR(80) NOT NULL,credential_id BLOB NOT NULL,credential_id_hash CHAR(64) NOT NULL UNIQUE,public_key TEXT NOT NULL,sign_count BIGINT UNSIGNED NOT NULL DEFAULT 0,transports VARCHAR(255) NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,last_used_at TIMESTAMP NULL,INDEX(user_id),CONSTRAINT fk_passkey_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     } catch(Throwable) {}
